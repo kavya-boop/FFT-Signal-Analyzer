@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FFT Signal Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c14;
+    --surface: #0e1520;
+    --surface2: #141d2e;
+    --border: rgba(99, 180, 255, 0.12);
+    --border2: rgba(99, 180, 255, 0.22);
+    --accent: #3b9eff;
+    --accent2: #f5a623;
+    --accent3: #50e3a4;
+    --text: #e8f0fc;
+    --text-muted: #6b85a8;
+    --text-dim: #3d5270;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --glow: 0 0 30px rgba(59,158,255,0.15);
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 10%, rgba(59,158,255,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 35% at 80% 80%, rgba(80,227,164,0.04) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59,158,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,158,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 20px 60px;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left {}
+  .header-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    opacity: 0.8;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  h1 span { color: var(--accent); }
+  .header-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent3);
+    background: rgba(80,227,164,0.08);
+    border: 1px solid rgba(80,227,164,0.2);
+    border-radius: 100px;
+    padding: 5px 12px;
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 6px var(--accent3);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+  /* LAYOUT */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 720px) {
+    .main-grid { grid-template-columns: 1fr; }
+    h1 { font-size: 20px; }
+  }
+
+  /* PANELS */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    transition: border-color 0.2s;
+  }
+  .panel:hover { border-color: var(--border2); }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* SIGNAL TYPE SELECTOR */
+  .sig-types {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .sig-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-family: var(--sans);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+  }
+  .sig-btn:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
+  .sig-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(59,158,255,0.08);
+  }
+  .sig-btn .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .sig-btn.active .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  /* SLIDERS */
+  .slider-group { margin-bottom: 14px; }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 5px;
+  }
+  .slider-label { font-size: 12px; color: var(--text-muted); }
+  .slider-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    min-width: 50px;
+    text-align: right;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--surface2);
+    outline: none;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(59,158,255,0.5);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    box-shadow: 0 0 8px rgba(59,158,255,0.5);
+  }
+
+  /* METRICS */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .metric-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .metric-val {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+  .metric-val.accent { color: var(--accent); }
+  .metric-val.amber { color: var(--accent2); }
+  .metric-val.green { color: var(--accent3); }
+
+  /* CHARTS */
+  .charts-stack { display: flex; flex-direction: column; gap: 16px; }
+  .chart-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px 14px;
+  }
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .chart-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .chart-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    letter-spacing: 0.05em;
+  }
+  .badge-blue { background: rgba(59,158,255,0.12); color: var(--accent); border: 1px solid rgba(59,158,255,0.2); }
+  .badge-amber { background: rgba(245,166,35,0.12); color: var(--accent2); border: 1px solid rgba(245,166,35,0.2); }
+  .chart-wrap { position: relative; width: 100%; height: 180px; }
+
+  /* PEAK BADGES */
+  .peaks-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .peak-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    background: rgba(59,158,255,0.08);
+    border: 1px solid rgba(59,158,255,0.18);
+    color: var(--accent);
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+  }
+  .peak-pill.top { background: rgba(245,166,35,0.1); border-color: rgba(245,166,35,0.3); color: var(--accent2); }
+
+  /* DIVIDER */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* FOOTER */
+  .footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .footer-text {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+  }
+  .footer-text span { color: var(--accent); }
+
+  /* SCANLINE ANIMATION */
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+  .scanline {
+    position: fixed;
+    left: 0; top: 0; width: 100%;
+    height: 2px;
+    background: linear-gradient(transparent, rgba(59,158,255,0.05), transparent);
+    pointer-events: none;
+    z-index: 999;
+    animation: scanline 8s linear infinite;
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="scanline"></div>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-tag">// Signal Processing Laboratory</div>
+      <h1><span>FFT</span> Signal Analyzer</h1>
+      <div class="header-sub">Discrete Fourier Transform — Frequency Domain Analysis</div>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot"></div>
+      LIVE ANALYSIS
+    </div>
+  </div>
+
+  <!-- METRICS ROW -->
+  <div class="metrics-row" style="margin-bottom:16px;">
+    <div class="metric-card">
+      <div class="metric-label">Dominant Freq</div>
+      <div class="metric-val accent" id="m-freq">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Peak Amplitude</div>
+      <div class="metric-val amber" id="m-amp">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">SNR (dB)</div>
+      <div class="metric-val green" id="m-snr">—</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- LEFT: CONTROLS -->
+    <div>
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-title">// Signal Type</div>
+        <div class="sig-types" id="sigTypes">
+          <button class="sig-btn active" data-type="sine" onclick="setType(this)">
+            <span class="dot"></span> Sine Wave
+          </button>
+          <button class="sig-btn" data-type="composite" onclick="setType(this)">
+            <span class="dot"></span> Composite (3 Freqs)
+          </button>
+          <button class="sig-btn" data-type="square" onclick="setType(this)">
+            <span class="dot"></span> Square Wave
+          </button>
+          <button class="sig-btn" data-type="noise" onclick="setType(this)">
+            <span class="dot"></span> Sine + Noise
+          </button>
+          <button class="sig-btn" data-type="chirp" onclick="setType(this)">
+            <span class="dot"></span> Chirp Sweep
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">// Parameters</div>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Frequency</span>
+            <span class="slider-val" id="v-freq">5 Hz</span>
+          </div>
+          <input type="range" id="s-freq" min="1" max="50" value="5" step="1" oninput="sync()">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Amplitude</span>
+            <span class="slider-val" id="v-amp">5</span>
+          </div>
+          <input type="range" id="s-amp" min="1" max="10" value="5" step="1" oninput="sync()">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Noise Level</span>
+            <span class="slider-val" id="v-noise">0</span>
+          </div>
+          <input type="range" id="s-noise" min="0" max="10" value="0" step="1" oninput="sync()">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Sample Rate</span>
+            <span class="slider-val" id="v-sr">500 Hz</span>
+          </div>
+          <input type="range" id="s-sr" min="100" max="1000" value="500" step="100" oninput="sync()">
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="panel-title" style="margin-bottom:10px;">// Detected Peaks</div>
+        <div class="peaks-row" id="peakPills">
+          <span style="font-size:12px; color:var(--text-dim);">loading...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: CHARTS -->
+    <div class="charts-stack">
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title">// Time Domain</div>
+          <span class="chart-badge badge-blue">x(t)</span>
+        </div>
+        <div class="chart-wrap"><canvas id="timePlot"></canvas></div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div class="chart-title">// Frequency Spectrum (FFT)</div>
+          <span class="chart-badge badge-amber">|X(f)|</span>
+        </div>
+        <div class="chart-wrap"><canvas id="freqPlot"></canvas></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-text">// Fourier Transform–Based Signal Analysis System &nbsp;·&nbsp; <span>DFT / FFT Engine</span></div>
+    <div class="footer-text">N = 512 samples &nbsp;·&nbsp; Cooley-Tukey FFT Algorithm</div>
+  </div>
+
+</div>
+
+<script>
+let timeChart, freqChart;
+let currentType = 'sine';
+
+function setType(btn) {
+  document.querySelectorAll('.sig-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentType = btn.dataset.type;
+  draw();
+}
+
+function sync() {
+  document.getElementById('v-freq').textContent = document.getElementById('s-freq').value + ' Hz';
+  document.getElementById('v-amp').textContent = document.getElementById('s-amp').value;
+  document.getElementById('v-noise').textContent = document.getElementById('s-noise').value;
+  document.getElementById('v-sr').textContent = document.getElementById('s-sr').value + ' Hz';
+  draw();
+}
+
+function generateSignal(type, freq, amp, noiseLevel, sampleRate) {
+  const N = 512;
+  const dt = 1 / sampleRate;
+  const signal = [];
+  for (let i = 0; i < N; i++) {
+    const t = i * dt;
+    let val = 0;
+    if (type === 'sine') {
+      val = amp * Math.sin(2 * Math.PI * freq * t);
+    } else if (type === 'composite') {
+      val = amp * Math.sin(2 * Math.PI * freq * t)
+          + amp * 0.5 * Math.sin(2 * Math.PI * freq * 2 * t)
+          + amp * 0.3 * Math.sin(2 * Math.PI * freq * 3.5 * t);
+    } else if (type === 'square') {
+      val = amp * Math.sign(Math.sin(2 * Math.PI * freq * t));
+    } else if (type === 'noise') {
+      val = amp * Math.sin(2 * Math.PI * freq * t);
+    } else if (type === 'chirp') {
+      const f_inst = freq + freq * 3 * i / N;
+      val = amp * Math.sin(2 * Math.PI * f_inst * t);
+    }
+    val += noiseLevel * (Math.random() * 2 - 1);
+    signal.push(val);
+  }
+  return signal;
+}
+
+function fft(re, im) {
+  const N = re.length;
+  if (N <= 1) return;
+  const halfN = N / 2;
+  const reE = [], imE = [], reO = [], imO = [];
+  for (let i = 0; i < halfN; i++) {
+    reE.push(re[2*i]); imE.push(im[2*i]);
+    reO.push(re[2*i+1]); imO.push(im[2*i+1]);
+  }
+  fft(reE, imE); fft(reO, imO);
+  for (let k = 0; k < halfN; k++) {
+    const ang = -2 * Math.PI * k / N;
+    const cr = Math.cos(ang), ci = Math.sin(ang);
+    const tr = cr * reO[k] - ci * imO[k];
+    const ti = ci * reO[k] + cr * imO[k];
+    re[k] = reE[k] + tr; im[k] = imE[k] + ti;
+    re[k+halfN] = reE[k] - tr; im[k+halfN] = imE[k] - ti;
+  }
+}
+
+function computeFFT(signal) {
+  const N = signal.length;
+  const re = [...signal], im = new Array(N).fill(0);
+  fft(re, im);
+  return re.slice(0, N/2).map((v, i) => 2 * Math.sqrt(v*v + im[i]*im[i]) / N);
+}
+
+function draw() {
+  const freq = parseInt(document.getElementById('s-freq').value);
+  const amp = parseInt(document.getElementById('s-amp').value);
+  const noiseLevel = parseInt(document.getElementById('s-noise').value);
+  const sampleRate = parseInt(document.getElementById('s-sr').value);
+
+  const signal = generateSignal(currentType, freq, amp, noiseLevel, sampleRate);
+  const N = signal.length;
+  const dt = 1 / sampleRate;
+  const displayN = Math.min(180, N);
+  const timeLabels = signal.slice(0, displayN).map((_, i) => (i * dt * 1000).toFixed(1));
+
+  const mag = computeFFT(signal);
+  const freqRes = sampleRate / N;
+  const maxMag = Math.max(...mag);
+  const domIdx = mag.indexOf(maxMag);
+  const domFreq = (domIdx * freqRes).toFixed(1);
+
+  const signalPower = signal.reduce((s, v) => s + v*v, 0) / N;
+  const noisePower = noiseLevel > 0 ? (noiseLevel * noiseLevel / 3) : 0.001;
+  const snr = 10 * Math.log10(signalPower / noisePower);
+
+  document.getElementById('m-freq').textContent = domFreq + ' Hz';
+  document.getElementById('m-amp').textContent = maxMag.toFixed(2);
+  document.getElementById('m-snr').textContent = snr.toFixed(1) + ' dB';
+
+  const peaks = [];
+  for (let i = 1; i < mag.length - 1; i++) {
+    if (mag[i] > mag[i-1] && mag[i] > mag[i+1] && mag[i] > maxMag * 0.08) {
+      peaks.push({ freq: (i * freqRes).toFixed(1), mag: mag[i] });
+    }
+  }
+  peaks.sort((a, b) => b.mag - a.mag);
+  const top5 = peaks.slice(0, 5);
+  document.getElementById('peakPills').innerHTML = top5.length
+    ? top5.map((p, idx) => `<span class="peak-pill${idx===0?' top':''}">${p.freq} Hz</span>`).join('')
+    : '<span style="font-size:12px;color:var(--text-dim)">none detected</span>';
+
+  const gridColor = 'rgba(99,180,255,0.05)';
+  const tickColor = '#3d5270';
+  const maxFreqShow = Math.min(mag.length, Math.floor(sampleRate * 0.4 / freqRes));
+
+  const timeData = signal.slice(0, displayN);
+  const freqData = mag.slice(0, maxFreqShow);
+  const freqLabs = freqData.map((_, i) => (i * freqRes).toFixed(1));
+
+  const barColors = freqData.map(v => v > maxMag * 0.5 ? '#f5a623' : v > maxMag * 0.15 ? '#3b9eff' : 'rgba(59,158,255,0.35)');
+
+  if (timeChart) timeChart.destroy();
+  timeChart = new Chart(document.getElementById('timePlot'), {
+    type: 'line',
+    data: {
+      labels: timeLabels,
+      datasets: [{
+        data: timeData,
+        borderColor: '#3b9eff',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+        backgroundColor: 'rgba(59,158,255,0.04)'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: tickColor, maxTicksLimit: 8, font: { family: "'Space Mono'", size: 10 } },
+          grid: { color: gridColor },
+          title: { display: true, text: 'Time (ms)', color: tickColor, font: { family: "'Space Mono'", size: 10 } }
+        },
+        y: {
+          ticks: { color: tickColor, font: { family: "'Space Mono'", size: 10 } },
+          grid: { color: gridColor },
+          title: { display: true, text: 'Amplitude', color: tickColor, font: { family: "'Space Mono'", size: 10 } }
+        }
+      }
+    }
+  });
+
+  if (freqChart) freqChart.destroy();
+  freqChart = new Chart(document.getElementById('freqPlot'), {
+    type: 'bar',
+    data: {
+      labels: freqLabs,
+      datasets: [{
+        data: freqData,
+        backgroundColor: barColors,
+        borderWidth: 0,
+        borderRadius: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: tickColor, maxTicksLimit: 10, font: { family: "'Space Mono'", size: 10 } },
+          grid: { color: gridColor },
+          title: { display: true, text: 'Frequency (Hz)', color: tickColor, font: { family: "'Space Mono'", size: 10 } }
+        },
+        y: {
+          ticks: { color: tickColor, font: { family: "'Space Mono'", size: 10 } },
+          grid: { color: gridColor },
+          title: { display: true, text: 'Magnitude |X(f)|', color: tickColor, font: { family: "'Space Mono'", size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+draw();
+</script>
+</body>
+</html>
